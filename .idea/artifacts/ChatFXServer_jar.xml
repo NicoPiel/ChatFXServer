@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="ChatFXServer:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/ChatFXServer_jar</output-path>
+    <root id="archive" name="ChatFXServer.jar">
+      <element id="module-output" name="ChatFXServer" />
+    </root>
+  </artifact>
+</component>
