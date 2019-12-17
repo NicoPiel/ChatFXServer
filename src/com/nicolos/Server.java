@@ -17,39 +17,90 @@ import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * This class represents a 'server' object.
+ * Use constructor as advised.
+ */
 public class Server {
-      static final int serverPort = 45126;
+      /**
+       * The server's default port.
+       * Do not change.
+       */
+      static final int SERVER_PORT = 45126;
+      /**
+       * A sequence of characters used by server and client to identify keep-alive-requests.
+       * Do not change.
+       */
+      final String REQUEST_STRING = "/#req#/";
+      
+      /**
+       * How long the server should wait before retrying a connection. Currently pretty much useless.
+       */
       int serverTimeoutTolerance; //in ms
       int serverTimeoutToleranceInSeconds; // in s
+      /**
+       * How often the server should try listening to incoming connection after timing out. Currently pretty much useless.
+       */
       int maxRetries;
+      
+      /**
+       * The server's socket, operating on port 45126 by default.
+       */
       static ServerSocket serverSocket;
-
+      
+      /**
+       * An ArrayList containing every message sent to server by clients.
+       */
       static ArrayList<String> messagelist;
-
+      
+      /**
+       * The thread pool used by the server for various things that should not be handled by the main thread.
+       */
       ExecutorService executor;
-
-      public Server(int _serverTimeoutTolerance, int _maxRetriesOnConnectionFailure) {
+      
+      /**
+       * Creates a new Server object with an ExecutorService using a cached thread pool.
+       * Server Socket is created on construction.
+       * The Server object does not do anything by itself, use
+       * Throws IOException if anything goes wrong during construction.
+       * @param _serverTimeoutToleranceInSeconds Mandatory. Currently useless. How long the server should wait before reattempting a connection.
+       * @param _maxRetriesOnConnectionFailure Mandatory. Currently useless. How often the server should try listening to incoming connections after timing out. Currently, the server will not stop listening.
+       */
+      
+      //TODO make retries useful or deprecate.
+      public Server(int _serverTimeoutToleranceInSeconds, int _maxRetriesOnConnectionFailure) {
             try {
+                  // Creates a fresh cached thread pool for the server object
                   executor = Executors.newCachedThreadPool();
 
-                  this.serverTimeoutTolerance = _serverTimeoutTolerance * 1000;
-                  this.serverTimeoutToleranceInSeconds = serverTimeoutTolerance / 1000;
+                  // See JavaDoc
+                  this.serverTimeoutTolerance = _serverTimeoutToleranceInSeconds * 1000;
+                  this.serverTimeoutToleranceInSeconds = serverTimeoutTolerance;
                   this.maxRetries = _maxRetriesOnConnectionFailure;
-                  serverSocket = new ServerSocket(serverPort);
-                  System.out.println(String.format("<%s>: Retrieved server socket at %d", Thread.currentThread().getName(), serverPort));
+                  
+                  // Build the server's socket on port 45126
+                  serverSocket = new ServerSocket(SERVER_PORT);
+                  System.out.println(String.format("<%s>: Retrieved server socket at %d", Thread.currentThread().getName(), SERVER_PORT));
                   System.out.println("Timeout tolerance is " + serverTimeoutToleranceInSeconds + " seconds.");
+                  
+                  // Create the server's chat history.
                   messagelist = new ArrayList<>();
             } catch (IOException e) {
                   e.printStackTrace();
             }
       }
-
+      
+      /**
+       * Will recursively check for incoming connection. Each listener uses its own thread in the cached thread pool.
+       * Must be ended manually, will otherwise run forever.
+       */
       public void AcceptConnection() {
+            // Timestamp for incoming messages
             DateFormat dateFormat = new SimpleDateFormat("HH:mm:ss");
 
+            // Create a client socket with incoming request.
             Socket client = WaitForConnection();
-
-            String requestString = "/#req#/";
+            
 
             executor.execute(() -> {
                   try {
@@ -60,9 +111,9 @@ public class Server {
                               if (in.hasNext()) {
                                     String msg = in.nextLine(); // 1
 
-                                    if (msg.contains("#1" + requestString)) {
+                                    if (msg.contains("#1" + REQUEST_STRING)) {
                                           out.println(GetChatHistoryLength());
-                                    } else if (msg.contains(requestString)) {
+                                    } else if (msg.contains(REQUEST_STRING)) {
                                           System.out.println(String.format("<%s>: %s poked", Thread.currentThread().getName(), client.getInetAddress().toString()));
 
                                           out.println(GetChatHistoryLength()); // 2
@@ -108,7 +159,12 @@ public class Server {
 
             AcceptConnection();
       }
-
+      
+      /**
+       * 
+       * @param _clientChatLength
+       * @return
+       */
       private String WriteChat(int _clientChatLength) {
             ArrayList<String> newMessagelist = new ArrayList<>();
             StringBuilder sb = new StringBuilder();
@@ -172,7 +228,7 @@ public class Server {
       }
 
       public int GetServerSocket() {
-            return serverPort;
+            return SERVER_PORT;
       }
 
       public ArrayList<String> GetMessageList() {
