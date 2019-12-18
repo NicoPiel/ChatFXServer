@@ -6,8 +6,6 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketException;
-import java.net.SocketTimeoutException;
 import java.sql.Date;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -18,124 +16,153 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
+ * <p>
  * This class represents a 'server' object.
  * Use constructor as advised.
+ * </p>
+ *
+ * @author Nico Piel
+ * @version 0.1
  */
 public class Server {
       /**
+       * <p>
        * The server's default port.
        * Do not change.
+       * </p>
        */
       static final int SERVER_PORT = 45126;
       /**
+       * <p>
        * A sequence of characters used by server and client to identify keep-alive-requests.
        * Do not change.
+       * </p>
        */
       final String REQUEST_STRING = "/#req#/";
-      
-      /**
-       * How long the server should wait before retrying a connection. Currently pretty much useless.
-       */
-      int serverTimeoutTolerance; //in ms
-      int serverTimeoutToleranceInSeconds; // in s
-      /**
-       * How often the server should try listening to incoming connection after timing out. Currently pretty much useless.
-       */
-      int maxRetries;
-      
+
       /**
        * The server's socket, operating on port 45126 by default.
+       *
+       * @see ServerSocket
        */
       static ServerSocket serverSocket;
-      
+
       /**
        * An ArrayList containing every message sent to server by clients.
+       *
+       * @see ArrayList
        */
       static ArrayList<String> messagelist;
-      
+
       /**
        * The thread pool used by the server for various things that should not be handled by the main thread.
+       *
+       * @see ExecutorService
        */
       ExecutorService executor;
-      
+
       /**
+       * <p>
        * Creates a new Server object with an ExecutorService using a cached thread pool.
        * Server Socket is created on construction.
-       * The Server object does not do anything by itself, use
+       * The Server object does not do anything by itself, use the helper methods.
        * Throws IOException if anything goes wrong during construction.
-       * @param _serverTimeoutToleranceInSeconds Mandatory. Currently useless. How long the server should wait before reattempting a connection.
-       * @param _maxRetriesOnConnectionFailure Mandatory. Currently useless. How often the server should try listening to incoming connections after timing out. Currently, the server will not stop listening.
+       * </p>
        */
-      
+
       //TODO make retries useful or deprecate.
-      public Server(int _serverTimeoutToleranceInSeconds, int _maxRetriesOnConnectionFailure) {
+      public Server() {
             try {
                   // Creates a fresh cached thread pool for the server object
                   executor = Executors.newCachedThreadPool();
 
-                  // See JavaDoc
-                  this.serverTimeoutTolerance = _serverTimeoutToleranceInSeconds * 1000;
-                  this.serverTimeoutToleranceInSeconds = serverTimeoutTolerance;
-                  this.maxRetries = _maxRetriesOnConnectionFailure;
-                  
                   // Build the server's socket on port 45126
                   serverSocket = new ServerSocket(SERVER_PORT);
                   System.out.println(String.format("<%s>: Retrieved server socket at %d", Thread.currentThread().getName(), SERVER_PORT));
-                  System.out.println("Timeout tolerance is " + serverTimeoutToleranceInSeconds + " seconds.");
-                  
+
                   // Create the server's chat history.
                   messagelist = new ArrayList<>();
             } catch (IOException e) {
                   e.printStackTrace();
             }
       }
-      
+
       /**
+       * <p>
        * Will recursively check for incoming connection. Each listener uses its own thread in the cached thread pool.
        * Must be ended manually, will otherwise run forever.
+       * </p>
+       * <p>
+       * (1) Gets the client's input message
+       * <p>
+       * If (1) equals the input string defined in this class (plus some extra stuff at the beginning), only return the length of the chat history
+       * This means that the client is connecting for the first time, not requesting a keep-alive
+       * </p>
+       * <p>
+       * If (1) contains the input string defined in this class, the client would like to receive a keep-alive and its missing chat history
+       * </p>
+       * <p>
+       * (2) Return the length of the server's current chat history, so the client can determine whether it is lacking something
+       * (3) The client will then answer whether it needs new chat lines
+       * (4) The client's chat history length will be saved in a variable
+       * (5) The server will then proceed to transmit any missing chat to the client
+       * </p>
        */
       public void AcceptConnection() {
             // Timestamp for incoming messages
             DateFormat dateFormat = new SimpleDateFormat("HH:mm:ss");
-
             // Create a client socket with incoming request.
             Socket client = WaitForConnection();
-            
 
+            // Uses an idle thread for each attempt to listen.
             executor.execute(() -> {
                   try {
                         if (client != null) {
+                              // These two will listen to the client
                               Scanner in = new Scanner(client.getInputStream());
                               PrintWriter out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(client.getOutputStream())), true);
 
                               if (in.hasNext()) {
-                                    String msg = in.nextLine(); // 1
+                                    // (1) Gets the client's input message
+                                    String msg = in.nextLine();
 
+                                    // If (1) equals the input string defined in this class (plus some extra stuff at the beginning), only return the length of the chat history
+                                    // This means that the client is connecting for the first time, not requesting a keep-alive
                                     if (msg.contains("#1" + REQUEST_STRING)) {
                                           out.println(GetChatHistoryLength());
-                                    } else if (msg.contains(REQUEST_STRING)) {
+                                    }
+
+                                    // If (1) contains the input string defined in this class, the client would like to receive a keep-alive and its missing chat history
+                                    else if (msg.contains(REQUEST_STRING)) {
                                           System.out.println(String.format("<%s>: %s poked", Thread.currentThread().getName(), client.getInetAddress().toString()));
 
-                                          out.println(GetChatHistoryLength()); // 2
+                                          // (2) Return the length of the server's current chat history, so the client can determine whether it is lacking something
+                                          out.println(GetChatHistoryLength());
 
                                           if (in.hasNext()) {
-                                                boolean needsNewChat = in.nextBoolean(); // 3
+                                                // (3) The client will then answer whether it needs new chat lines
+                                                boolean needsNewChat = in.nextBoolean();
 
+                                                // If so, the server will request the client's current chat history length
                                                 if (needsNewChat) {
                                                       System.out.println(String.format("<%s>: Writing chat to %s", Thread.currentThread().getName(), client.getInetAddress().toString()));
 
                                                       if (in.hasNext()) {
-                                                            int clientChatLength = in.nextInt(); // 4
+                                                            // (4) The client's chat history length will be saved here
+                                                            int clientChatLength = in.nextInt();
                                                             String output = WriteChat(clientChatLength);
                                                             System.out.println("String to write: " + output);
-                                                            out.println(output); // 5
+                                                            // (5) The server will then proceed to transmit any missing chat to the client
+                                                            out.println(output);
                                                       }
                                                 } else {
                                                       System.out.println(client.getInetAddress() + "'s chat history is up-to-date.");
                                                 }
                                           }
+                                          // If the client's message does not contain the request string, it means the client is actually submitting a new message to the server
                                     } else {
-                                          messagelist.add(String.format("<%s> - %s: %s", dateFormat.format(Date.from(Instant.now())), client.getInetAddress().getHostName() , msg));
+                                          // Save that message to the server's chat history
+                                          messagelist.add(String.format("<%s> - %s: %s", dateFormat.format(Date.from(Instant.now())), client.getInetAddress().getHostName(), msg));
                                           System.out.println(Thread.currentThread().getName() + ": " + msg);
                                     }
                               } else {
@@ -157,19 +184,22 @@ public class Server {
 
             });
 
+            // Recursively restarts the listener.
             AcceptConnection();
       }
-      
+
       /**
-       * 
-       * @param _clientChatLength
-       * @return
+       * Will look for missing chat lines in the server's chat history, then build a string containing them.
+       *
+       * @param _clientChatLength The client's current chat history length as transmitted in <code>Server#AcceptConnection()</code>
+       * @return A string containing all missing chat lines
+       * @see Server#AcceptConnection()
        */
       private String WriteChat(int _clientChatLength) {
             ArrayList<String> newMessagelist = new ArrayList<>();
             StringBuilder sb = new StringBuilder();
 
-            for (int i = GetChatHistoryLength()-1; i >= _clientChatLength; i--) {
+            for (int i = GetChatHistoryLength() - 1; i >= _clientChatLength; i--) {
                   newMessagelist.add(messagelist.get(i));
             }
 
@@ -181,56 +211,73 @@ public class Server {
             return sb.toString();
       }
 
+      /**
+       * <p>
+       * Will accept any client requesting a connection with the server.
+       * For use in <code>Server#AcceptConnection()</code>
+       * </p>
+       *
+       * @return The client's socket
+       * @see Server#AcceptConnection()
+       */
       private Socket WaitForConnection() {
             Socket client = null;
-
-            try {
-                  serverSocket.setSoTimeout(this.serverTimeoutTolerance);
-
-                  System.out.println("Retries: " + maxRetries);
-
-                  int count = 1;
-
-                  while (client == null && count <= maxRetries) {
-                        try {
-                              System.out.println(String.format("<%s>: Listening..", Thread.currentThread().getName()));
-                              client = serverSocket.accept();
-                        } catch (SocketTimeoutException e) {
-                              System.err.println(String.format("<%s>: Timeout after %d seconds.", Thread.currentThread().getName(), serverTimeoutToleranceInSeconds));
-                              System.err.println(String.format("<%s>: Retrying.. %d/%d", Thread.currentThread().getName(), count, maxRetries));
-                              count++;
-                        } catch (IOException e) {
-                              e.printStackTrace();
-                        }
+            // As long as there is no client connection and the server hasn't retried too many times
+            while (client == null) {
+                  try {
+                        System.out.println(String.format("<%s>: Listening..", Thread.currentThread().getName()));
+                        client = serverSocket.accept();
+                  } catch (IOException e) {
+                        e.printStackTrace();
                   }
-            } catch (SocketException e) {
-                  e.printStackTrace();
             }
 
             return client;
       }
 
-      public boolean CloseConnection() {
+      /**
+       * <p>
+       * Will carefully terminate the server socket's connection to its ip and port.
+       * Might not end the program running the server correctly.
+       * </p>
+       */
+      public static void CloseConnection() {
             try {
-                  serverSocket.close();
-                  System.out.println("Connection has been closed.");
-                  return true;
+                  if (serverSocket != null) {
+                        serverSocket.close();
+                        System.out.println("Connection has been closed.");
+                  } else {
+                        System.out.println("Socket either hasn't been created or has already been closed.");
+                  }
             } catch (IOException e) {
                   System.err.println("Socket couldn't be closed.");
                   e.printStackTrace();
             }
-
-            return false;
       }
 
+      /**
+       * Returns the server's chat history length.
+       *
+       * @return The server's chat history length.
+       */
       int GetChatHistoryLength() {
             return messagelist.size();
       }
 
-      public int GetServerSocket() {
+      /**
+       * Returns the server's port.
+       *
+       * @return The server's port.
+       */
+      public int GetServerPort() {
             return SERVER_PORT;
       }
 
+      /**
+       * Returns the server's chat history.
+       *
+       * @return The server's chat history.
+       */
       public ArrayList<String> GetMessageList() {
             return messagelist;
       }

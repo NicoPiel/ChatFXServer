@@ -2,47 +2,54 @@ package com.nicolos;
 
 import java.util.Scanner;
 
+/**
+ * <p>
+ * A custom CLI to control the server.
+ * It will create a new thread to listen to your commands.
+ * If you want to create your own, look at this one first.
+ * </p>
+ */
 public class Main {
+      /**
+       * <p>
+       * Will start and close the server for you.
+       * If you want more advanced functionality, write your own CLI.
+       * </p>
+       * @param args Arguments to start the <code>main</code> function with. In this case usually empty.
+       */
       public static void main(String[] args) {
             Scanner input = new Scanner(System.in);
 
-            System.out.print("""
-                    Enter one of the following commands:
-                    start -r -ti\t-\tSpecify number of retries and timeout tolerance in seconds with -r. Like so: "start -r=5 -ti=5"
-                    start\t-\tDefault - Retries: 5, Timeout tolerance: 10 seconds
-                    quit\t-\tExits the application.
-                    """);
-            new Thread(() -> {
-                  while (true) {
-                        System.out.println(Thread.currentThread().getName() + ": Waiting for your input..");
+            System.out.println(
+                    """
+                                    Enter one of the following commands:
+                                    start\t\t\t-\tStarts the server.
+                                    quit\t\t\t-\tExits the application.
+                            """
+            );
+            while (true) {
+                  System.out.println(String.format("<%s>: Waiting for your input..", Thread.currentThread().getName()));
 
-                        String inputString = input.nextLine();
+                  String inputString = input.nextLine();
 
-                        switch (inputString) {
-                              case "start" -> {
+                  switch (inputString) {
+                        case "start" -> {
+                              new Thread(() -> {
                                     System.out.println("Starting..");
-                                    Server server = new Server(10, 5);
+                                    System.out.println("You can exit at any time.");
+                                    Server server = new Server();
                                     server.AcceptConnection();
-                                    server.CloseConnection();
-                              }
-                              case "quit" -> {
-                                    System.err.println("Exiting..");
-                                    return;
-                              }
-                              default -> {
-                                    if (inputString.matches("start\\s-r=\\d*\\s-ti=\\d*")) {
-                                          int r = Integer.parseInt(inputString.trim().substring(9, inputString.indexOf("ti") - 2));
-                                          int ti = Integer.parseInt(inputString.trim().substring(inputString.indexOf("ti") + 3, inputString.length()));
-                                          Server server = new Server(r, ti);
-                                          System.out.println("Starting..");
-                                          server.AcceptConnection();
-                                          server.CloseConnection();
-                                    } else {
-                                          System.err.println("Something went wrong, try again.");
-                                    }
-                              }
+                                    Server.CloseConnection();
+                              }).start();
                         }
+                        case "quit" -> {
+                              System.err.println("Exiting..");
+                              Server.CloseConnection();
+                              System.exit(0);
+                              return;
+                        }
+                        default -> System.out.println("Try again.");
                   }
-            }).start();
+            }
       }
 }
